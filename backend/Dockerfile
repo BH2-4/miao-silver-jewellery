@@ -21,10 +21,12 @@ RUN apt-get update -qq && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
 # Set production environment variables and enable jemalloc for reduced memory usage and latency.
+# APP_URL_HOST：图片等绝对 URL 的对外主机名（非敏感，烤入镜像以免疫平台 env 传播延迟；可被运行时 env 覆盖）
 ENV RAILS_ENV="production" \
     BUNDLE_DEPLOYMENT="1" \
     BUNDLE_PATH="/usr/local/bundle" \
     BUNDLE_WITHOUT="development" \
+    APP_URL_HOST="miao-backend-gecb.onrender.com" \
     LD_PRELOAD="/usr/local/lib/libjemalloc.so"
 
 # Throw-away build stage to reduce size of final image
