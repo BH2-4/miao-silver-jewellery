@@ -2,6 +2,9 @@ require_relative "boot"
 
 require "rails/all"
 
+# csv 自 Ruby 3.4 起不再是默认库；spree_core 未声明但运行时依赖它（Bundler 不自动加载传递依赖）
+require "csv"
+
 # Require the gems listed in Gemfile, including any gems
 # you've limited to :test, :development, or :production.
 Bundler.require(*Rails.groups)
