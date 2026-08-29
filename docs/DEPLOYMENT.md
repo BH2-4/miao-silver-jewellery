@@ -236,7 +236,20 @@ curl -s -X POST ... -d '{"imageUrl": "ghcr.io/bh2-4/miao-backend:<旧sha>"}' \
 - 未入库原因：安全扫描对上游测试夹具（硬编码假凭据 ×4）与 `send.ts` 文件名处理（实为白名单正则、安全）误报 HIGH，阻断提交
 - 入库方案（下一步）：加固 `send.ts` 说明注释 + 移除/改写触发误报的测试夹具文件，或以 `--no-verify` 例外流程提交并附扫描备注
 
-### 6.3 本地跑店面
+### 6.3 上游已知 issue 对照表（2026-08-29 审计）
+
+快照 `e1b2cc7` 即上游 main 最新提交（2026-07-29 后无新提交），无需追版本。已知开放 bug 与我们的关系：
+
+| Issue | 症状 | 对本站影响 |
+|---|---|---|
+| spree/storefront#208 | 国家/语言切换异常：us/en → jp/ja 被弹回，us/en → gb/en-GB 报错 | ⚠️ 顾客可感知；规避：暂只用默认 us/en，等上游修复后同步快照 |
+| spree/spree#14334 | 商品挂**顶级**分类后在 dashboard/店面都打不开 | ✅ 不受影响（种子挂二级分类）；⚠️ 将来在 admin 手动建商品时勿直接挂根分类 `Categories` |
+| spree/spree#14365 | Admin 后台移动端菜单空白 | 仅影响手机管理后台，桌面不受影响 |
+| spree/spree#14113 | Next.js 店面结算：物流规则/国家限制对登录用户不校验 | 未接支付前无影响；**开站配置物流规则前必须复查**（加入 §8 清单） |
+
+另：Store API v3 单资源响应为**扁平 JSON**（无 `data` 包裹层），列表响应才有 `data` 数组——写对接脚本时注意。
+
+### 6.4 本地跑店面
 
 ```bash
 cd /tmp/storefront-stage
@@ -266,6 +279,7 @@ curl -s -H "Authorization: Bearer $CF_TOKEN" \
 ## 8. 正式开站前清单（外贸合规与转化）
 
 - [ ] 支付：Stripe / PayPal 开通（用户已确认暂缓），`randomplayx.com` 审核前政策页齐全可访问
+- [ ] 支付前复查 spree/spree#14113：登录用户结算不校验物流规则/国家限制（见 §6.3）
 - [ ] 政策页（店面承载）：Privacy / Terms / Return & Refund / Shipping
 - [ ] 合规：对美 ≤$800/单 de minimis；原产国标识；银饰纯度如实标注（S925/S999）
 - [ ] 宣传红线：不使用「保值/投资/治病」类表述
