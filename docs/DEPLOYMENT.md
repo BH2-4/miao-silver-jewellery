@@ -1,98 +1,152 @@
 # 正式部署流程 · randomplayx.com
 
-> 仓库：`miao-silver-jewellery` ｜ 用途：贵州苗银外贸独立站 ｜ 最后更新：2026-08-28
+> 仓库：`miao-silver-jewellery` ｜ 用途：贵州苗银外贸独立站 ｜ 基础框架：Spree Commerce 5.6（headless）
+> 最后更新：2026-08-29
 
-## 0. 现状与前提
+## 0. 架构总览
 
-已核实现状（2026-08-28）：
+采用 Spree 官方主线架构（5.5+）：**Rails API 后端 + Next.js 店面**，前后端分离部署。
 
-- ✅ 域名 `randomplayx.com` 已注册，DNS 托管在 Cloudflare（NS：felicity / mckinley.ns.cloudflare.com）
-- ⚠️ 该域名当前已承载旧站点「Random Play X — 链接索引」。**正式绑定新站 = 替换旧站内容**，切换前需与旧站负责人确认；过渡期可先用 `*.pages.dev` 预览地址完成验收
-- ✅ GitHub 仓库已就绪，`main` 为生产分支
+```
+                    Cloudflare DNS（域名 randomplayx.com 托管区）
+                     │                          │
+        randomplayx.com（apex + www）   api.randomplayx.com
+                     │                          │
+              ┌──────▼──────┐           ┌──────▼──────────────┐
+              │   Vercel    │  REST API │   Render (Docker)   │
+              │  Next.js    │──────────▶│  Rails 8 + Spree    │
+              │  店面(SEO)  │  /api/v3  │  /api/v3 + /admin   │
+              └─────────────┘           └─────────┬───────────┘
+                     │                            │
+                用户浏览/下单            ┌────────▼────────┐
+                                          │ Render Postgres │
+                                          └─────────────────┘
+```
 
-技术选型：
-
-| 项 | 选择 | 说明 |
-|---|---|---|
-| 代码托管 | GitHub | push 到 `main` 自动触发部署 |
-| 托管 | Cloudflare Pages | 全球 CDN、自动 SSL、免费额度；Vercel 为等效备选 |
-| 域名 | randomplayx.com | 海外注册 + 海外托管，无需 ICP 备案；不得面向中国大陆提供经营性服务 |
-| 站点 | 静态占位页 → 正式电商站（Next.js / Astro） | 占位阶段 Output 目录为 `public/` |
-
-前置条件：
-
-- [ ] 可登录域名所在的 Cloudflare 账号
-- [ ] Cloudflare 已授权连接 GitHub（Workers & Pages 首次连接时授权）
-- [ ] （建议）为品牌注册域名邮箱（Google Workspace / Zoho Mail）
-
-## 1. 首次部署（Cloudflare Pages）
-
-1. Cloudflare Dashboard → **Workers & Pages → Create → Pages → Connect to Git**
-2. 授权 GitHub，选择仓库 `miao-silver-jewellery`
-3. 构建配置（占位阶段）：
-   - Framework preset：`None`
-   - Build command：留空
-   - Build output directory：`public`
-4. **Save and Deploy** → 得到 `https://<项目名>.pages.dev` 预览地址
-
-> 迁移到 Next.js / Astro 后仅改两条构建配置：Build command 改为 `npm run build`（按实际），Output 改为对应产物目录（如 `.next` / `dist`），其余流程不变。
-
-### Vercel 备选流程
-
-Import Git Repository → 选择本仓库 → Framework preset 选 `Other`，Output Directory 填 `public` → Deploy。域名绑定方式同理。
-
-## 2. 绑定正式域名 randomplayx.com
-
-1. Pages 项目 → **Custom domains → Set up a custom domain** → 输入 `randomplayx.com`
-2. 再添加 `www.randomplayx.com` 作为别名
-3. DNS 记录（域名与 Pages 同在 Cloudflare 账号时，面板会**自动添加**；跨账号或外部 DNS 时手动添加）：
-
-| 类型 | 主机记录 | 记录值 | 代理 |
+| 组件 | 技术 | 承载 | 部署位置 |
 |---|---|---|---|
-| CNAME | `@` | `<项目名>.pages.dev` | 开启（橙云） |
-| CNAME | `www` | `<项目名>.pages.dev` | 开启（橙云） |
+| 顾客店面 | Next.js（`storefront/`，Phase 2 引入） | 商品浏览、SEO 落地页、结账流程 | Vercel |
+| 商业后台 | Rails 8 + Spree 5.6（`backend/`） | Store API `/api/v3`、管理仪表盘 `/admin`、订单/库存 | Render（Docker） |
+| 数据库 | PostgreSQL 16+ | 商品、订单、用户 | Render 托管 Postgres |
+| 图片存储 | Active Storage | 产品图（初期本地磁盘，正式期迁 S3/Cloudflare R2） | 随后端 |
 
-4. SSL：证书由 Cloudflare 自动签发与续期；SSL/TLS 加密模式设为 **Full (strict)**，开启 **Always Use HTTPS**
-5. 主域归一化：将 `www` 设置为 redirect 到 `randomplayx.com`（保留一种 canonical 形式，利于 SEO）
+选型理由：Spree 5.5+ 官方主线已转向 headless（Rails 店面 gem `spree_storefront` 停更于 5.4.6），官方明确该架构面向跨境电商场景；Next.js 店面对 SEO 与首屏性能更友好，符合外贸独立站获客需求。Spree 5.6 已移除 Redis 与独立 worker 依赖，后端仅需一个 Web 服务 + 数据库。
 
-## 3. 上线验收标准
+> 备选：若想回到单体 Rails 店面，需锁 Spree `5.4.6` + `spree_storefront`，不享受后续更新，不推荐。
 
-- [ ] `https://randomplayx.com` 返回 200，证书链有效（SSL Labs 评级 ≥ A）
-- [ ] `http://` 与 `www.` 均 301 到 `https://randomplayx.com`
-- [ ] Lighthouse（移动端）：Performance ≥ 90、SEO ≥ 90
-- [ ] 移动端（375px / 414px）无布局错乱
-- [ ] 回滚演练：执行一次 Rollback 并恢复到最新版本
-
-## 4. 日常发布流程
+## 1. 仓库布局
 
 ```
-功能分支 → Pull Request（自动生成预览 URL）→ Review 通过 → merge 到 main
-        → Cloudflare Pages 自动构建部署（约 1–2 分钟）→ 生产环境更新
+backend/            # Rails 8 + Spree 5.6.1 后端（本仓库当前主体）
+storefront/         # Next.js 店面（Phase 2，基于官方 spree-nextjs-storefront）
+docs/DEPLOYMENT.md  # 本文档
+render.yaml         # Render 基础设施蓝图（后端 + 数据库）
 ```
 
-- 生产问题回滚：**Deployments → 上一个成功部署 → Rollback to this deployment**，秒级生效
-- 建议在 GitHub 开启 `main` 分支保护（要求 PR 通过后合并）
+生产分支：`main`。后端与店面的部署互相独立：`backend/**` 变更只触发 Render，`storefront/**` 变更只触发 Vercel。
 
-## 5. 正式开站前清单（外贸合规与转化）
+## 2. 后端本地开发（backend/）
 
-- [ ] **支付通道**：Stripe / PayPal 开户，并提交 `randomplayx.com` 网站审核（要求政策页齐全、可正常访问）
-- [ ] **政策页**：Privacy Policy、Terms of Service、Return & Refund Policy、Shipping Policy（支付通道审核硬性要求）
-- [ ] **分析与收录**：GA4 接入、Google Search Console 验证主域并提交 sitemap
-- [ ] **SEO 基线**：品牌 Title / Description、产品页 Product 结构化数据、Open Graph；**移除占位页中的 `noindex`**
-- [ ] **联系方式**：域名邮箱、WhatsApp 商务号、页脚公司信息
-- [ ] **性能**：产品图 WebP + 懒加载、确认 CDN 缓存命中
-- [ ] **宣传合规**：银饰纯度如实标注（S925 / S999 等），避免「保值」「投资」类宣传语
+前置：Ruby ≥ 3.2（仓库内 `backend/.ruby-version` 锁定）、Docker。
 
-## 6. 环境变量与密钥管理
+```bash
+# 1. 开发数据库（宿主机 5433，避免与本机其他项目冲突）
+docker run -d --name miao-pg -e POSTGRES_HOST_AUTH_METHOD=trust \
+  -e POSTGRES_USER=arco -p 127.0.0.1:5433:5432 postgres:16-alpine
 
-- 全部在平台侧配置：Pages → Settings → **Environment variables**，Production 与 Preview 分开配置
-- `.env*` 已被 `.gitignore` 覆盖，禁止提交任何密钥进仓库
-- 密钥泄露应急：平台侧立即轮换 → 用 `git filter-repo` 清理历史并 force push → 必要时联系 GitHub Support 清理缓存
+# 2. 安装依赖并准备数据库
+cd backend
+bundle install
+bin/rails db:prepare
+
+# 3. 启动（默认 http://localhost:3000）
+bin/dev
+```
+
+- Store API 健康检查：`GET /api/v3/store`
+- 管理后台：`http://localhost:3000/admin`
+- 创建管理员：`bin/rails db:seed ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=<强密码>`（或 `bin/rails spree:setup:token` 生成一次性开通链接）
+- 演示数据（可选）：`bin/rails spree:load_sample_data`
+- 运行测试：`bin/rails test`（绑定 CI 后合并前必绿）
+
+## 3. 后端正式部署（Render，蓝图驱动）
+
+基础设施定义在仓库根 `render.yaml`（Web 服务 + 托管 Postgres），Render 会按蓝图自动同步。
+
+首次开通：
+
+1. Render Dashboard → **New → Blueprint** → 授权并选择本仓库 → Render 读取 `render.yaml` 创建 `miao-backend` 服务与 `miao-db` 数据库
+2. 首次同步前，在 Dashboard 为服务补充 `sync: false` 的密钥：
+   - `RAILS_MASTER_KEY`＝本地 `backend/config/master.key` 的内容（`config/credentials.yml.enc` 的解密钥匙，**绝不入库**）
+3. 首次部署完成后执行一次初始化（Dashboard → Shell，或本地指生产库执行）：
+   ```bash
+   bin/rails db:migrate
+   bin/rails db:seed ADMIN_EMAIL=<管理员邮箱> ADMIN_PASSWORD=<强密码>
+   ```
+4. 之后每次 `git push origin main`：Render 自动构建 Docker 镜像 → `preDeployCommand` 跑 `db:migrate` → 通过 `/up` 健康检查后切流
+
+要点：
+
+- 数据库连接串通过蓝图由 `DATABASE_URL`（`fromDatabase`）注入，不落明文
+- `postgresMajorVersion`、`region` 创建后**不可更改**，蓝图中已按弗吉尼亚（us-east，兼顾欧美客群）+ PG16 定稿
+- 回滚：Deployments → 任意历史版本 → **Rollback**；数据库迁移回滚需另跑 `db:rollback`
+- 建议升级时机：`free` 实例仅用于联调（会休眠、Postgres 免费 30 天过期）；正式接单前升 `starter`+（512MB 起，Spree 建议 ≥ 1GB 内存实例）
+
+## 4. 域名与 DNS（Cloudflare 托管区）
+
+DNS 记录规划（`randomplayx.com` 托管在 Cloudflare，NS：felicity / mckinley.ns.cloudflare.com）：
+
+| 类型 | 主机记录 | 记录值 | 代理 | 说明 |
+|---|---|---|---|---|
+| CNAME | `@` | `cname.vercel-dns.com` | 先灰云 | 店面（Vercel 分配，以导入域名后面板为准） |
+| CNAME | `www` | `cname.vercel-dns.com` | 先灰云 | Vercel 侧配置 301 → apex |
+| CNAME | `api` | `miao-backend.onrender.com` | 先灰云 | 后端（以 Render 服务默认域名为准） |
+
+步骤：
+
+1. **后端**：Render → miao-backend → Settings → Custom Domains → 添加 `api.randomplayx.com` → 按提示在 Cloudflare 加 CNAME → 等待证书签发（Render 自动签 Let's Encrypt）
+2. **店面**（Phase 2）：Vercel 项目 → Settings → Domains → 添加 `randomplayx.com` 与 `www` → 按提示加 CNAME → Vercel 自动签证书
+3. **验证**：`https://api.randomplayx.com/up` 返回 200；`https://randomplayx.com` 返回店面首页
+4. **SSL 模式**：Cloudflare SSL/TLS 设 **Full (strict)**；始终 HTTPS 开启
+5. **代理（橙云）**：初期建议 DNS-only（灰云），由各平台直接签证书最稳；后续需要 Cloudflare WAF/缓存再加橙云，加后必须保持 Full (strict) 防止重定向循环
+6. ⚠️ **切换前确认**：randomplayx.com 当前仍承载旧站「Random Play X — 链接索引」，上述 apex 记录生效即替换旧站，操作前和相关同事打招呼
+
+## 5. 店面部署（Phase 2，Vercel）
+
+1. Fork/引入官方 `spree/spree-nextjs-storefront` 至本仓库 `storefront/`，配好后端地址 `NEXT_PUBLIC_API_URL=https://api.randomplayx.com` 与 Store API token
+2. Vercel → Import Git Repository → Root Directory 选 `storefront/`（仅 `storefront/**` 触发构建）
+3. 域名绑定见上节；Next.js 用默认构建（零配置）
+4. 预览环境：每个 PR 自动生成 `*.vercel.app` 预览地址，验收后合并
+
+## 6. 正式开站前清单（外贸合规与转化）
+
+- [ ] **支付**：Stripe / PayPal 开通，提交 `randomplayx.com` 审核前确认政策页齐全且可访问
+- [ ] **政策页**（店面承载）：Privacy Policy、Terms of Service、Return & Refund、Shipping Policy
+- [ ] **合规申报**：对美销售 ≤ 800 USD/单走 de minimis；商品需原产国标识；如实申报材质（S925/S999 苗银含银量）
+- [ ] **宣传红线**：不使用「保值/投资/治病」类表述；银饰重量与纯度如实标注
+- [ ] **分析与收录**：GA4、Google Search Console 验证 apex（注意同时验证 `www`）、提交 sitemap
+- [ ] **SEO 基线**：品牌词 Title/Description、Product 结构化数据、OG 图
+- [ ] **联系渠道**：域名邮箱（hello@randomplayx.com）、WhatsApp Business
+- [ ] **图片存储**：产品图迁 S3 或 Cloudflare R2（多实例/重建容器后本地盘数据会丢）
+- [ ] **备份**：Render Postgres 开启每日自动备份（付费计划）
+- [ ] **管理后台**：强密码 + 后台路径限 IP（Cloudflare Access 或 WAF 规则）
 
 ## 7. 应急与回滚
 
 | 场景 | 动作 |
 |---|---|
-| 新版本有 bug | Deployments → Rollback 到上一个成功版本，秒级生效 |
-| 域名解析故障 | 检查 DNS 记录；临时将流量切回 `*.pages.dev` 或挂维护页 |
-| 平台故障 | Vercel 接入同一仓库作为热备，DNS 切换即可恢复 |
+| 后端新版有 bug | Render Deployments → Rollback（秒级，不含数据） |
+| 迁移损坏数据 | `bin/rails db:rollback STEP=1` + 从备份恢复 |
+| 店面故障 | Vercel Instant Rollback；紧急时 Cloudflare 挂维护页 |
+| 域名/DNS 故障 | Cloudflare 事件页；临时切 `*.onrender.com`/`*.vercel.app` 直连验证 |
+
+## 8. 月成本概览（正式接单期）
+
+| 项 | 方案 | 费用 |
+|---|---|---|
+| Render Web 服务 | starter 512MB | ~$7 |
+| Render Postgres | basic-256mb 起（低量起步） | ~$6 |
+| Vercel | Hobby（商用需 Pro） | $0 → $20 |
+| Cloudflare | Free 计划 | $0 |
+
+月固定成本约 $13–33；带宽超量后按量计费。

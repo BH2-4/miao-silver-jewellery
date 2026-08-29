@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "mimosa-hook-status/v1",
+  "recordedAt": "2026-08-29T04:48:12.605Z",
+  "sessionId": "sess_3fdbda1e-ac5e-4e77-a89a-7791ca313557",
+  "event": "PostToolUse",
+  "toolName": "Edit",
+  "file": "config/environments/production.rb",
+  "outcome": "clear",
+  "coverage": "complete",
+  "findingCount": 0,
+  "durationMs": 3,
+  "hostState": "hook_complete",
+  "reportHint": ".mimosa/reports/"
+}
