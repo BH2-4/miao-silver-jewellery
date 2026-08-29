@@ -1,7 +1,17 @@
 # 正式部署文档 · randomplayx.com
 
+> **⚠️ ARCHIVED · 2026-08-30 — 本栈已归档，正式独立站已迁移**
+>
+> **归档决策记录**：
+> - 正式站 = **SilverForgedGui 引擎分支**（AI 需求引擎 Stage 0-5 + `/collection` 成品独立站 91 件商品），部署于 Vercel 项目 `randomplayx-engine`（prj_K8rSMmUx8nySGlEjYLoghb013ZOd），域名 randomplayx.com + www
+> - 本仓库 Spree 栈角色从「正式独立站」降为「遗留/参考实现」
+> - 资源处置：`shop.randomplayx.com` 已 301 → `randomplayx.com/collection`（引擎 next.config host 条件跳转）；**Render 后端已挂起**（`suspended`，可随时 unsuspend，PG 2026-09-28 自然到期清零）；Vercel miao-storefront 项目保留但无域名
+> - 3D 交互叙事（3d.randomplayx.com）作为品牌叙事二级入口，经引擎 Act 3 / 页脚 / collection heritage 三处 UTM 分渠道链接进入
+>
+> 以下文档保留作 Spree 5.6 headless + Render 免费档的完整实践手册。
+
 > 仓库：`miao-silver-jewellery` ｜ 用途：贵州苗银外贸独立站 ｜ 基础框架：Spree Commerce 5.6.1（headless）
-> 最后更新：2026-08-29（**全链路已上线**：Cloudflare DNS → Vercel 店面 → Render 后端 → Render PG）
+> 最后更新：2026-08-30（归档）
 
 ## 0. 当前部署状态（2026-08-29 实测）
 

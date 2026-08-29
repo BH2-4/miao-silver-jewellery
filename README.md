@@ -1,5 +1,12 @@
 # Miao Silver Jewellery — 贵州苗银外贸独立站
 
+> **⚠️ ARCHIVED · 2026-08-30**
+> 本仓库的 Spree 方案（Rails 后端 + Next.js 店面）已**归档**，不再是 RandomPlayX 的正式独立站。
+> - **正式站**：`randomplayx.com` = AI 需求引擎 + 成品独立站（仓库 [BH2-4/SilverForgedGui](https://github.com/BH2-4/SilverForgedGui) `silver-forged-gui` 分支，Vercel 项目 `randomplayx-engine`）
+> - **本栈去向**：`shop.randomplayx.com` 已 301 → `randomplayx.com/collection`；Render 后端已挂起（可 unsuspend 恢复，数据库 2026-09-28 自然到期）
+> - 归档原因与决策记录见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) §0
+> 仓库保留作历史归档：Spree 5.6 headless 全套实践、免费档部署手册、mock 数据管线仍有参考价值。
+
 面向海外市场的贵州苗族银饰（Miao Silver）品牌独立站，基于 **Spree Commerce 5.6.1（headless）** 构建。
 
 - **✅ 全链路已上线（2026-08-29，试跑）**：**randomplayx.com** = 3D 引导站（SilverForgedGui，末尾 CTA 跳店）→ **shop.randomplayx.com** = Vercel 店面（9 款 mock 苗银商品）→ https://miao-backend-gecb.onrender.com（Render 后端）→ Render Postgres（free，**2026-09-28 到期**）
