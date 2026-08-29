@@ -5,6 +5,7 @@ ARG BASE=ghcr.io/bh2-4/miao-backend:latest
 FROM ${BASE}
 
 # 主镜像 ENTRYPOINT 只对 "rails server" 做 db:prepare 分支，对 seed 直接透传；
-# 这里显式重置以避免歧义。
+# 这里显式重置以避免歧义。LOAD_MOCK_PRODUCTS 通过 rake 参数内联传递，
+# 不依赖容器环境变量（规避平台 env 传播不稳定问题）。
 ENTRYPOINT []
-CMD ["./bin/rails", "db:seed"]
+CMD ["./bin/rails", "db:seed", "LOAD_MOCK_PRODUCTS=1"]
