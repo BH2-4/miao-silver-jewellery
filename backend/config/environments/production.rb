@@ -37,6 +37,11 @@ Rails.application.configure do
   config.log_tags = [ :request_id ]
   config.logger   = ActiveSupport::TaggedLogging.logger(STDOUT)
 
+  # ActiveStorage/图片等绝对 URL 的对外主机名（API 序列化器依赖 default_url_options）
+  if ENV["APP_URL_HOST"].present?
+    config.default_url_options = { host: ENV["APP_URL_HOST"], protocol: "https" }
+  end
+
   # Change to "debug" to log everything (including potentially personally-identifiable information!).
   config.log_level = ENV.fetch("RAILS_LOG_LEVEL", "info")
 

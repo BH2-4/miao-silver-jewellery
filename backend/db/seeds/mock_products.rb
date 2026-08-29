@@ -111,6 +111,13 @@ PRODUCTS.each do |item|
     available_on: product.available_on || 1.day.ago
   )
 
+  # Store API 只展示 active 商品；新建默认 draft
+  begin
+    product.activate! unless product.status == "active"
+  rescue StandardError => e
+    puts "MOCK: activate failed for #{item[:slug]}: #{e.message}"
+  end
+
   product.taxons << taxon unless product.taxons.include?(taxon)
 
   begin
