@@ -28,5 +28,12 @@ jobs:
           ruby-version: "3.4"
           bundler-cache: true
           working-directory: backend
-      - name: Run seeds
-        run: bundle exec rails db:seed
+      - name: Diagnose, migrate, and seed
+        run: |
+          bundle exec rails runner 'require "pg"; c = PG.connect(ENV["DATABASE_URL"]); puts "DATABASES: " + c.exec("SELECT datname FROM pg_database WHERE datistemplate = false").map { |r| r["datname"] }.join(", ")'
+          for cfg in "" "cache:" "queue:" "cable:"; do
+            echo "== pending count for db:${cfg}migrate =="
+            bundle exec rails db:${cfg}migrate:status | grep -c " down" || true
+          done
+          bundle exec rails db:migrate
+          bundle exec rails db:seed
