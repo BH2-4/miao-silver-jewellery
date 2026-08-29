@@ -1,0 +1,41 @@
+name: Build and publish backend image
+
+# 构建 Rails 后端 Docker 镜像并推送到 GHCR，
+# 供 Render 以预构建镜像方式部署（绕开 Git 集成授权问题）。
+on:
+  push:
+    branches: ["main"]
+    paths: ["backend/**", ".github/workflows/docker-publish.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/bh2-4/miao-backend # ghcr 要求全小写
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: backend/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
