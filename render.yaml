@@ -4,8 +4,8 @@
 # 注意不可变字段：数据库 region / postgresMajorVersion 创建后不可改
 databases:
   - name: miao-db
-    databaseName: miao_silver_jewellery
-    user: miao_app
+    databaseName: miao_db
+    user: miao_db_user
     plan: free
     region: oregon
     postgresMajorVersion: 16
