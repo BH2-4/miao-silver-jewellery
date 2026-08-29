@@ -1,0 +1,10 @@
+# 种子专用镜像：基于已发布的主镜像，启动命令固化为 db:seed。
+# 由 .github/workflows/docker-publish.yml 在主镜像推送后构建，tag 为 :seed。
+# 用法：Render cron 服务（部署即执行一次）或任意容器环境运行。
+ARG BASE=ghcr.io/bh2-4/miao-backend:latest
+FROM ${BASE}
+
+# 主镜像 ENTRYPOINT 只对 "rails server" 做 db:prepare 分支，对 seed 直接透传；
+# 这里显式重置以避免歧义。
+ENTRYPOINT []
+CMD ["./bin/rails", "db:seed"]

@@ -39,3 +39,13 @@ jobs:
             ${{ env.IMAGE }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # 种子镜像（供 Render cron 一次性任务在内网执行 db:seed）
+      - uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: backend/Dockerfile.seed
+          build-args: |
+            BASE=${{ env.IMAGE }}:${{ github.sha }}
+          push: true
+          tags: ${{ env.IMAGE }}:seed
