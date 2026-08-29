@@ -1,152 +1,193 @@
-# 正式部署流程 · randomplayx.com
+# 正式部署文档 · randomplayx.com
 
-> 仓库：`miao-silver-jewellery` ｜ 用途：贵州苗银外贸独立站 ｜ 基础框架：Spree Commerce 5.6（headless）
-> 最后更新：2026-08-29
+> 仓库：`miao-silver-jewellery` ｜ 用途：贵州苗银外贸独立站 ｜ 基础框架：Spree Commerce 5.6.1（headless）
+> 最后更新：2026-08-29（后端已在 Render 免费档上线，本文档与实际部署对齐）
 
-## 0. 架构总览
+## 0. 当前部署状态（2026-08-29 实测）
 
-采用 Spree 官方主线架构（5.5+）：**Rails API 后端 + Next.js 店面**，前后端分离部署。
+| 项 | 状态 | 说明 |
+|---|---|---|
+| 后端服务 miao-backend | ✅ live | https://miao-backend-gecb.onrender.com（`/up` 200） |
+| 数据库 miao-db（PG16 free） | ✅ available | 176 迁移全部就位；**2026-09-28 到期**（30 天限制） |
+| 店铺种子 + 管理员 | ✅ 已验证 | admin 登录 API 返回 200 + JWT |
+| 镜像流水线 | ✅ 全绿 | `ghcr.io/bh2-4/miao-backend`（`latest` / `<git-sha>` / `seed` 三个标签） |
+| api.randomplayx.com 绑定 | ⬜ 未做 | 见 §5 |
+| Next.js 店面（Vercel） | ⬜ Phase 2 | 见 §6 |
+| 支付接入 | ⬜ 未开始 | 见 §7 |
+
+已修复并沉淀的三个部署期问题（防复发）：
+
+1. **database.yml 覆盖连接串**：production 段必须整段 `url: <%= ENV["DATABASE_URL"] %>`，不得残留 username/database 显式键（Rails 合并规则：YAML 显式键优先于 URL 成分）
+2. **csv 常量缺失**：Ruby 3.4+ 移除标准库 csv，spree_core 依赖却未声明且不自动加载 → `config/application.rb` 顶部 `require "csv"`
+3. **免费档 Postgres 无外部访问**：Render free 数据库只能从 Render 内网连（本机/GitHub Actions 一律 SSL 拒绝）→ 一切 DB 操作必须走"内网执行"（见 §4.4）
+
+## 1. 架构总览
 
 ```
-                    Cloudflare DNS（域名 randomplayx.com 托管区）
-                     │                          │
-        randomplayx.com（apex + www）   api.randomplayx.com
-                     │                          │
-              ┌──────▼──────┐           ┌──────▼──────────────┐
-              │   Vercel    │  REST API │   Render (Docker)   │
-              │  Next.js    │──────────▶│  Rails 8 + Spree    │
-              │  店面(SEO)  │  /api/v3  │  /api/v3 + /admin   │
-              └─────────────┘           └─────────┬───────────┘
-                     │                            │
-                用户浏览/下单            ┌────────▼────────┐
-                                          │ Render Postgres │
-                                          └─────────────────┘
+                Cloudflare DNS（randomplayx.com 托管区）
+                 │                          │
+    randomplayx.com（apex+www）    api.randomplayx.com（未绑定）
+                 │                          │
+          ┌──────▼──────┐           ┌──────▼──────────────┐
+          │   Vercel    │  REST API │    Render（镜像）    │
+          │  Next.js    │──────────▶│  Rails 8 + Spree    │
+          │  店面(SEO)  │  /api/v3  │   免费档·会休眠     │
+          │  （Phase2） │           └─────────┬───────────┘
+          └─────────────┘                     │ 内网连接
+                                    ┌────────▼────────┐
+                                    │ Render Postgres │
+                                    │  free·30天到期  │
+                                    └─────────────────┘
 ```
 
 | 组件 | 技术 | 承载 | 部署位置 |
 |---|---|---|---|
-| 顾客店面 | Next.js（`storefront/`，Phase 2 引入） | 商品浏览、SEO 落地页、结账流程 | Vercel |
-| 商业后台 | Rails 8 + Spree 5.6（`backend/`） | Store API `/api/v3`、Admin API（React 仪表盘接入）、订单/库存 | Render（Docker） |
-| 数据库 | PostgreSQL 16+ | 商品、订单、用户 | Render 托管 Postgres |
-| 图片存储 | Active Storage | 产品图（初期本地磁盘，正式期迁 S3/Cloudflare R2） | 随后端 |
+| 顾客店面 | Next.js（`storefront/`，Phase 2） | 商品浏览、SEO、结账 | Vercel（Hobby 免费档） |
+| 商业后台 | Rails 8 + Spree 5.6.1（`backend/`） | Store API `/api/v3`、Admin API | Render（GHCR 镜像，free 档） |
+| 数据库 | PostgreSQL 16 | 商品、订单、用户 | Render 托管 Postgres（free） |
+| 图片存储 | Active Storage | 产品图（当前本地磁盘，随容器重建丢失） | 接单前迁 S3/R2 |
 
-选型理由：Spree 5.5+ 官方主线已转向 headless（Rails 店面 gem `spree_storefront` 停更于 5.4.6），官方明确该架构面向跨境电商场景；Next.js 店面对 SEO 与首屏性能更友好，符合外贸独立站获客需求。Spree 5.6 已移除 Redis 与独立 worker 依赖，后端仅需一个 Web 服务 + 数据库。
-
-> 备选：若想回到单体 Rails 店面，需锁 Spree `5.4.6` + `spree_storefront`，不享受后续更新，不推荐。
-
-## 1. 仓库布局
+## 2. 仓库布局
 
 ```
-backend/            # Rails 8 + Spree 5.6.1 后端（本仓库当前主体）
-storefront/         # Next.js 店面（Phase 2，基于官方 spree-nextjs-storefront）
-docs/DEPLOYMENT.md  # 本文档
-render.yaml         # Render 基础设施蓝图（后端 + 数据库）
+backend/                  # Rails 8 + Spree 5.6.1：Dockerfile、Dockerfile.seed、全部应用代码
+docs/DEPLOYMENT.md        # 本文档
+render.yaml               # Render 现状记录（实际经 API 创建，未走 Blueprint）
+docker-compose.yml        # 本地开发：PG16(:5433) + Rails(:3000)
+script/download-gems.sh   # 国内网络离线下载 lockfile 全量 gem
+.github/workflows/
+  docker-publish.yml      # 构建并推送 :latest / :sha / :seed 镜像（push main 触发）
+  seed.yml                # 手动触发：从外部对库执行 db:seed（⚠️ free 档库不可达，仅付费库可用）
+  lockfile.yml            # Gemfile 变更时由 CI 重新解析 Gemfile.lock
 ```
 
-生产分支：`main`。后端与店面的部署互相独立：`backend/**` 变更只触发 Render，`storefront/**` 变更只触发 Vercel。
+## 3. 本地开发（backend/，容器化）
 
-## 2. 后端本地开发（backend/，容器化）
-
-前置：仅 Docker（含 Compose）。本机无需安装 Ruby——开发环境与生产同为容器，架构一致。
+前置：仅 Docker。本机无需 Ruby——开发与生产同为容器。
 
 ```bash
-# 国内网络建议先备离线 gem 缓存（详见 README）
+# 国内网络先备离线 gem 缓存
 ./script/download-gems.sh backend/Gemfile.lock backend/vendor/cache
 cd backend && docker compose run --rm web bundle install --local && cd ..
 
-# 启动（PostgreSQL 16 :5433 + Rails :3000）
-docker compose up
+docker compose up          # PG :5433 + Rails :3000
 
-# 首次初始化数据库 + 管理员
+# 首次初始化（本地库）
 cd backend && docker compose run --rm web bash -c \
-  "bin/rails db:prepare && bin/rails db:seed AUTO_ACCEPT=1 ADMIN_EMAIL=<邮箱> ADMIN_PASSWORD=<强密码>"
+  "bin/rails db:prepare && bin/rails db:seed AUTO_ACCEPT=1 ADMIN_EMAIL=admin@randomplayx.com ADMIN_PASSWORD=<本地密码>"
 bin/rails spree:load_sample_data   # 演示数据（可选）
 ```
 
-- 健康检查：`GET http://localhost:3000/up`
-- Store API：`/api/v3/store/*`，请求头 `X-Spree-Api-Key: <publishable key>`（key 存于 `spree_api_keys` 表）
-- 管理后台/仪表盘 API：`/api/v3/admin/*`（Spree 5.6 管理界面为 React 仪表盘，直连 Admin API）
-- 测试：`docker compose run --rm web bin/rails test`
-- 依赖解析：改 `Gemfile` 后本机网络不通时，推送触发 `.github/workflows/lockfile.yml` 由 CI 生成 lockfile
+验证：`curl http://localhost:3000/up` → 200；带 `X-Spree-Api-Key`（取自 `spree_api_keys` 表）访问 `/api/v3/store/products`。
 
-## 3. 后端正式部署（Render，蓝图驱动）
+## 4. 后端部署与运维（Render，镜像方案）
 
-基础设施定义在仓库根 `render.yaml`（Web 服务 + 托管 Postgres），Render 会按蓝图自动同步。
+### 4.1 为什么是镜像部署
 
-首次开通：
+- 本工作区的 Render-GitHub 集成无法访问本仓库（`unfetchable`，多轮验证未解），Git-backed 与 Blueprint 流程不可用
+- 镜像方案：GitHub Actions（数据中心网络）构建 → GHCR 公开镜像 → Render 以 `runtime: image` 拉取
+- 代价：镜像更新**不自动部署**（`autoDeployTrigger: off`），需手动触发（§4.2）；GHCR 包当前为公开（试跑期接受，正式期改私有 + registryCredential）
 
-1. Render Dashboard → **New → Blueprint** → 授权并选择本仓库 → Render 读取 `render.yaml` 创建 `miao-backend` 服务与 `miao-db` 数据库
-2. 首次同步前，在 Dashboard 为服务补充 `sync: false` 的密钥：
-   - `RAILS_MASTER_KEY`＝本地 `backend/config/master.key` 的内容（`config/credentials.yml.enc` 的解密钥匙，**绝不入库**）
-3. 首次部署完成后执行一次初始化（Dashboard → Shell，或本地指生产库执行）：
-   ```bash
-   bin/rails db:migrate
-   bin/rails db:seed ADMIN_EMAIL=<管理员邮箱> ADMIN_PASSWORD=<强密码>
-   ```
-4. 之后每次 `git push origin main`：Render 按 `backend/Dockerfile` 自动构建镜像 → 容器入口 `bin/docker-entrypoint` 自动执行 `db:prepare`（含迁移）→ 通过 `/up` 健康检查后切流。首次部署后补一次种子（Render Shell）：`bin/rails db:seed AUTO_ACCEPT=1 ADMIN_EMAIL=<邮箱> ADMIN_PASSWORD=<强密码>`
+### 4.2 发布新代码（标准流程）
 
-要点：
+```bash
+git push origin main
+# 等 Actions docker-publish.yml 全绿（首次~4min，缓存后~1.5min）
+# 触发部署（重新拉取 :latest）：
+curl -s -X POST -H "Authorization: Bearer $RENDER_API_KEY" \
+  -H "Content-Type: application/json" -d '{}' \
+  https://api.render.com/v1/services/<SERVICE_ID>/deploys
+```
 
-- 数据库连接串通过蓝图由 `DATABASE_URL`（`fromDatabase`）注入，不落明文
-- `postgresMajorVersion`、`region` 创建后**不可更改**，蓝图中已按弗吉尼亚（us-east，兼顾欧美客群）+ PG16 定稿
-- 回滚：Deployments → 任意历史版本 → **Rollback**；数据库迁移回滚需另跑 `db:rollback`
-- 建议升级时机：`free` 实例仅用于联调（会休眠、Postgres 免费 30 天过期）；正式接单前升 `starter`+（512MB 起，Spree 建议 ≥ 1GB 内存实例）
+监控：
 
-## 4. 域名与 DNS（Cloudflare 托管区）
+```bash
+render logs --resources <SERVICE_ID> --limit 50 --output text --confirm   # 应用日志
+# 部署状态：GET /v1/services/<SERVICE_ID>/deploys/<DEPLOY_ID>，live 即成功
+```
 
-DNS 记录规划（`randomplayx.com` 托管在 Cloudflare，NS：felicity / mckinley.ns.cloudflare.com）：
+服务 ID 见 `render.yaml` 注释或 Dashboard；本机 CLI 需先 `render workspace set tea-da38g3lg1s2s73d235eg`。
 
-| 类型 | 主机记录 | 记录值 | 代理 | 说明 |
-|---|---|---|---|---|
-| CNAME | `@` | `cname.vercel-dns.com` | 先灰云 | 店面（Vercel 分配，以导入域名后面板为准） |
-| CNAME | `www` | `cname.vercel-dns.com` | 先灰云 | Vercel 侧配置 301 → apex |
-| CNAME | `api` | `miao-backend.onrender.com` | 先灰云 | 后端（以 Render 服务默认域名为准） |
+### 4.3 环境变量管理
 
-步骤：
+线上生效清单（值一律不进仓库）：
 
-1. **后端**：Render → miao-backend → Settings → Custom Domains → 添加 `api.randomplayx.com` → 按提示在 Cloudflare 加 CNAME → 等待证书签发（Render 自动签 Let's Encrypt）
-2. **店面**（Phase 2）：Vercel 项目 → Settings → Domains → 添加 `randomplayx.com` 与 `www` → 按提示加 CNAME → Vercel 自动签证书
-3. **验证**：`https://api.randomplayx.com/up` 返回 200；`https://randomplayx.com` 返回店面首页
-4. **SSL 模式**：Cloudflare SSL/TLS 设 **Full (strict)**；始终 HTTPS 开启
-5. **代理（橙云）**：初期建议 DNS-only（灰云），由各平台直接签证书最稳；后续需要 Cloudflare WAF/缓存再加橙云，加后必须保持 Full (strict) 防止重定向循环
-6. ⚠️ **切换前确认**：randomplayx.com 当前仍承载旧站「Random Play X — 链接索引」，上述 apex 记录生效即替换旧站，操作前和相关同事打招呼
-
-## 5. 店面部署（Phase 2，Vercel）
-
-1. Fork/引入官方 `spree/spree-nextjs-storefront` 至本仓库 `storefront/`，配好后端地址 `NEXT_PUBLIC_API_URL=https://api.randomplayx.com` 与 Store API token
-2. Vercel → Import Git Repository → Root Directory 选 `storefront/`（仅 `storefront/**` 触发构建）
-3. 域名绑定见上节；Next.js 用默认构建（零配置）
-4. 预览环境：每个 PR 自动生成 `*.vercel.app` 预览地址，验收后合并
-
-## 6. 正式开站前清单（外贸合规与转化）
-
-- [ ] **支付**：Stripe / PayPal 开通，提交 `randomplayx.com` 审核前确认政策页齐全且可访问
-- [ ] **政策页**（店面承载）：Privacy Policy、Terms of Service、Return & Refund、Shipping Policy
-- [ ] **合规申报**：对美销售 ≤ 800 USD/单走 de minimis；商品需原产国标识；如实申报材质（S925/S999 苗银含银量）
-- [ ] **宣传红线**：不使用「保值/投资/治病」类表述；银饰重量与纯度如实标注
-- [ ] **分析与收录**：GA4、Google Search Console 验证 apex（注意同时验证 `www`）、提交 sitemap
-- [ ] **SEO 基线**：品牌词 Title/Description、Product 结构化数据、OG 图
-- [ ] **联系渠道**：域名邮箱（hello@randomplayx.com）、WhatsApp Business
-- [ ] **图片存储**：产品图迁 S3 或 Cloudflare R2（多实例/重建容器后本地盘数据会丢）
-- [ ] **备份**：Render Postgres 开启每日自动备份（付费计划）
-- [ ] **管理后台**：强密码 + 后台路径限 IP（Cloudflare Access 或 WAF 规则）
-
-## 7. 应急与回滚
-
-| 场景 | 动作 |
-|---|---|
-| 后端新版有 bug | Render Deployments → Rollback（秒级，不含数据） |
-| 迁移损坏数据 | `bin/rails db:rollback STEP=1` + 从备份恢复 |
-| 店面故障 | Vercel Instant Rollback；紧急时 Cloudflare 挂维护页 |
-| 域名/DNS 故障 | Cloudflare 事件页；临时切 `*.onrender.com`/`*.vercel.app` 直连验证 |
-
-## 8. 月成本概览（正式接单期）
-
-| 项 | 方案 | 费用 |
+| 键 | 值来源 | 说明 |
 |---|---|---|
-| Render Web 服务 | starter 512MB | ~$7 |
-| Render Postgres | basic-256mb 起（低量起步） | ~$6 |
-| Vercel | Hobby（商用需 Pro） | $0 → $20 |
-| Cloudflare | Free 计划 | $0 |
+| `DATABASE_URL` | miao-db **内部**连接串 | 经 `GET /v1/postgres/<DB_ID>/connection-info` 取 `internalConnectionString`，PUT env-vars 写入 |
+| `RAILS_MASTER_KEY` | `backend/config/master.key` | 泄露即轮换：重新 `rails credentials` 体系 |
+| `RAILS_ENV/RAILS_LOG_LEVEL/RAILS_STORAGE_SERVICE/WEB_CONCURRENCY/RAILS_MAX_THREADS` | 固定值 | 见 render.yaml |
 
-月固定成本约 $13–33；带宽超量后按量计费。
+注意：env-vars 的 PUT 是**全量替换**语义——先 GET 现有列表、变更后整体 PUT 回去。历史教训：创建后新写入的变量到容器生效可能有延迟，部署失败先复查容器实际 env 再排查其他。
+
+### 4.4 数据库初始化/重种子（免费档内网执行法）
+
+免费档库不可外部连接，SSH 又被 CLI 锁交互模式——采用**一次性种子服务**：
+
+1. `:seed` 镜像已由流水线自动构建（基于主镜像，CMD 固化为 `bin/rails db:seed`）
+2. 创建一次性 free web 服务（image `:seed` + 内部连接串 + `AUTO_ACCEPT/ADMIN_EMAIL/ADMIN_PASSWORD` 环境变量）
+3. 任务跑完进程自然退出 → Render 标记 deploy failed（**预期现象，非故障**）→ 查日志确认种子输出
+4. **立即删除该服务**（省免费时长）
+5. 验证：`POST /api/v3/admin/auth/login` 凭管理员账号应返回 200 + JWT
+
+重建数据库（到期/换库）：删旧库建新库 → 改服务 `DATABASE_URL` → 触发一次部署（入口脚本自动 db:prepare 全量迁移）→ 执行上述种子流程。全程约 10 分钟。
+
+### 4.5 回滚
+
+```bash
+# 部署任意历史版本（每次构建都有 :<git-sha> 标签）：
+curl -s -X POST ... -d '{"imageUrl": "ghcr.io/bh2-4/miao-backend:<旧sha>"}' \
+  https://api.render.com/v1/services/<SERVICE_ID>/deploys
+```
+
+注意：代码回滚不回滚数据库 schema；当前库仅结构无业务数据，最坏整库重建（§4.4）。
+
+### 4.6 免费档限制与升级路径
+
+| 限制 | 影响 | 升级动作（需在 Render 绑卡） |
+|---|---|---|
+| 服务 15 分钟无流量休眠 | 冷启动 30-60s | web → starter（$7/月，不休眠） |
+| 750 免费时长/月·全工作区 | 仅够一个常驻服务（旧 5 服务已挂起腾位） | 升级后旧服务可按需恢复 |
+| Postgres 30 天过期（**9-28**） | 到期整库删除 | db → basic-256mb（$6/月，解锁外部连接 + 每日备份） |
+| 无磁盘持久化 | 容器重建丢上传图片 | 接单前迁 S3/Cloudflare R2 |
+
+## 5. 域名绑定（下一步）
+
+1. **api.randomplayx.com**：Render Dashboard → miao-backend → Settings → Custom Domains 添加 → Cloudflare 加 CNAME（`api` → `miao-backend-gecb.onrender.com`，先灰云）→ 验证 `https://api.randomplayx.com/up` 200
+2. **randomplayx.com + www**：待店面上线后绑 Vercel（§6）
+3. SSL/TLS 模式 **Full (strict)**，开启 Always Use HTTPS
+4. ⚠️ apex 记录生效即替换现挂旧站「Random Play X」，切换前与相关方确认
+
+## 6. 店面（Phase 2，Vercel 免费档）
+
+1. 引入官方 `spree/spree-nextjs-storefront` 至 `storefront/`，配 `NEXT_PUBLIC_API_URL=https://api.randomplayx.com` 与 publishable key
+2. Vercel Import（Root Directory: `storefront/`）→ 绑 apex + www（www 301 → apex）
+3. 每个 PR 自动预览，验收后合并
+4. 说明：Vercel 只承担 Next.js 店面；Rails 后端无法跑在 Vercel（无常驻进程/不支持 Ruby 运行时），维持 Render 不变
+
+## 7. 正式开站前清单（外贸合规与转化）
+
+- [ ] 支付：Stripe / PayPal 开通，`randomplayx.com` 审核前政策页齐全可访问
+- [ ] 政策页（店面承载）：Privacy / Terms / Return & Refund / Shipping
+- [ ] 合规：对美 ≤$800/单 de minimis；原产国标识；银饰纯度如实标注（S925/S999）
+- [ ] 宣传红线：不使用「保值/投资/治病」类表述
+- [ ] GA4 + Search Console（apex 与 www 都验证）+ sitemap
+- [ ] 品牌词 Title/Description、Product 结构化数据、OG 图
+- [ ] 域名邮箱 + WhatsApp Business
+- [ ] 产品图迁 S3/R2；Render PG 升级并开启每日备份
+- [ ] 管理后台强密码 + 后台限 IP（Cloudflare Access/WAF）
+
+## 8. 安全事项
+
+- [ ] **轮换 Render API key**（曾出现在聊天记录）：Dashboard → Settings → API Keys
+- [ ] **更换生产 admin 密码**（当前为开发密码）
+- [ ] GHCR 包转私有 + Render 配 registryCredential（镜像含生产代码）
+- [ ] `master.key`、`.env*`、连接串永不入库；GitHub secrets 现有：`RENDER_DB_URL`（外部串，free 档下已无用，可删）、`RAILS_MASTER_KEY`、`ADMIN_PASSWORD`
+- [ ] free 档库到期即删——不要往里面放任何舍不得的数据
+
+## 9. 成本概览
+
+| 阶段 | 配置 | 月成本 |
+|---|---|---|
+| 试跑（当前） | Render free ×2（web+db）+ Vercel Hobby + Cloudflare Free | $0 |
+| 正式接单 | Render starter + basic-256mb + Vercel Pro（商用） | ~$33 |

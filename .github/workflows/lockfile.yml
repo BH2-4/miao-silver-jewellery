@@ -5,7 +5,8 @@ name: Generate lockfile
 # 用 GitHub Actions 的数据中心网络做一次依赖解析。
 on:
   push:
-    branches: ["rails-setup"]
+    branches: ["main"]
+    paths: ["backend/Gemfile"]
 
 permissions:
   contents: write

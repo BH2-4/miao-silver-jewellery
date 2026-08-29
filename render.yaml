@@ -1,39 +1,50 @@
-# Render Blueprint — Miao Silver Jewellery backend
-# 试跑阶段：free 档（web 512MB/0.1CPU 会休眠；Postgres 30 天过期）。
-# 正式接单前升级：web → starter，db → basic-256mb 以上（见 docs/DEPLOYMENT.md §8）。
-# 注意不可变字段：数据库 region / postgresMajorVersion 创建后不可改
+# =============================================================================
+# Miao Silver Jewellery — Render 部署描述
+# -----------------------------------------------------------------------------
+# ⚠️ 本文件当前是「现状记录」性质的文档：实际服务经由 Render API 创建
+# （image-backed），并非通过 Blueprint 应用。字段按当前真实配置维护，
+# 若未来改用 Blueprint 同步，可基于此文件开通。
+#
+# 现状（2026-08-29，试跑期，全部免费档）：
+#   - web 服务 miao-backend：镜像 ghcr.io/bh2-4/miao-backend:latest（公开）
+#   - 数据库 miao-db：free 档 PG16（2026-09-28 到期，30 天限制）
+#   - 发布方式：push → GitHub Actions 构建镜像 → 手动/API 触发 Render 部署
+#     （本工作区的 Render-GitHub 集成无法访问本仓库，Git-backed 不可用）
+# =============================================================================
+
 databases:
   - name: miao-db
     databaseName: miao_db
     user: miao_db_user
-    plan: free
-    region: oregon
-    postgresMajorVersion: 16
+    plan: free # 正式接单：basic-256mb 起（解锁外部连接、备份、不过期）
+    region: oregon # 不可变：创建后不可改
+    postgresMajorVersion: 16 # 不可变
 
 services:
   - type: web
     name: miao-backend
-    runtime: docker
-    dockerfilePath: backend/Dockerfile
-    dockerContext: backend
-    plan: free
+    runtime: image
+    image: ghcr.io/bh2-4/miao-backend:latest # 每次部署重新拉取；按 SHA 回滚见 docs/DEPLOYMENT.md
+    plan: free # 正式接单：starter（不休眠、512MB→1GB）
     region: oregon
     healthCheckPath: /up
-    autoDeployTrigger: commit
+    autoDeployTrigger: off # 镜像更新不自动部署；发布流程见 docs/DEPLOYMENT.md §4.2
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
-          name: miao-db
-          property: connectionString
+        sync: false # 值 = miao-db 内部连接串，经 API 写入，勿入仓库
+      - key: RAILS_MASTER_KEY
+        sync: false # 值 = backend/config/master.key
       - key: RAILS_ENV
         value: production
       - key: RAILS_LOG_LEVEL
         value: info
       - key: RAILS_STORAGE_SERVICE
-        value: local # 正式接单前切 s3/r2（见 docs/DEPLOYMENT.md §6）
+        value: local # 正式接单前切 s3/r2（容器重建本地文件会丢）
       - key: WEB_CONCURRENCY
-        value: "1" # free 档 512MB，单进程
+        value: "1" # free 档 512MB 单进程
       - key: RAILS_MAX_THREADS
         value: "3"
-      - key: RAILS_MASTER_KEY
-        sync: false # 在 Dashboard 手工填入 backend/config/master.key 内容，勿提交仓库
+
+# 历史备注：miao-seed 服务（已删除）曾用 :seed 镜像 + 一次性环境变量
+# （AUTO_ACCEPT / ADMIN_EMAIL / ADMIN_PASSWORD）执行 db:seed，
+# 流程存档于 docs/DEPLOYMENT.md §4.4
