@@ -118,6 +118,17 @@ PRODUCTS.each do |item|
     puts "MOCK: activate failed for #{item[:slug]}: #{e.message}"
   end
 
+  # 商品须发布到渠道（ProductPublication）才对顾客可见；样本数据发布到全渠道
+  begin
+    Spree::Channel.where(store_id: store.id).each do |channel|
+      Spree::ProductPublication.find_or_create_by!(product: product, channel: channel) do |pp|
+        pp.published_at = Time.current
+      end
+    end
+  rescue StandardError => e
+    puts "MOCK: publish failed for #{item[:slug]}: #{e.message}"
+  end
+
   product.taxons << taxon unless product.taxons.include?(taxon)
 
   begin
