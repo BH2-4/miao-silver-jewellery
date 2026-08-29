@@ -11,8 +11,8 @@
 | 数据库 miao-db（PG16 free） | ✅ available | 176 迁移全部就位；**2026-09-28 到期**（30 天限制） |
 | Mock 商品数据 | ✅ 9 款已上架 | 详见 §5；商品可见性三道闸全部打通 |
 | 管理后台 | ✅ 可登录 | `POST /api/v3/admin/auth/login` 返回 200 + JWT |
-| Next.js 店面（Vercel） | ✅ live | 项目 `miao-storefront`（Hobby 免费档） |
-| randomplayx.com + www | ✅ 已切换 | 指向 Vercel；旧站（Cloudflare Pages）已被替换 |
+| Next.js 店面（Vercel） | ✅ live | 项目 `miao-storefront`（Hobby 免费档），域名 **shop.randomplayx.com** |
+| randomplayx.com + www | ✅ 3D 引导页 | 指向 **SilverForgedGui**（Spree 演示之外的 3D 前置引导站，github.com/BH2-4/SilverForgedGui）；末尾 CTA 按钮新标签跳 `shop.randomplayx.com`（带 UTM） |
 | api.randomplayx.com 绑定 | ⬜ 未做 | 见 §7 |
 | 支付接入 | ⬜ 按用户要求暂缓 | 见 §8 |
 
@@ -30,7 +30,8 @@
 | Render workspace | `tea-da38g3lg1s2s73d235eg` |
 | Render 后端服务 | `srv-da993hhsrm7s73bjfrk0` |
 | Render Postgres（free，9-28 到期） | `dpg-da97i6ijnfac73culi00-a`（miao_db / miao_db_user） |
-| Vercel 项目 | `prj_zYOT73pxIqtXnhr5bSYXq6gE7Azo`（miao-storefront） |
+| Vercel 项目（店面） | `prj_zYOT73pxIqtXnhr5bSYXq6gE7Azo`（miao-storefront，shop.randomplayx.com） |
+| Vercel 项目（3D 引导站） | `prj_5AFSjQnXFCxhAJj5vr9J7mQHjfbS`（silverforgedgui，randomplayx.com；源码在独立仓库 BH2-4/SilverForgedGui） |
 | Cloudflare zone | `41a6e698ef8bec7aaba7d0253b76dd73` |
 | Storefront publishable key（公开物，非机密） | `pk_by3q8DrnxB1uzw48DUnWrgeP` |
 
@@ -47,22 +48,23 @@
 
 ```
                 Cloudflare DNS（randomplayx.com 托管区）
-                 │                          │
-    randomplayx.com（apex+www）    api.randomplayx.com（未绑定）
-     CNAME→cname.vercel-dns.com
-     灰云（proxied:false）              │（规划）
-          │                          ▼
-   ┌──────▼──────┐           ┌────────────────────┐
-   │   Vercel    │  REST API │    Render（镜像）   │
-   │  Next.js    │──────────▶│  Rails 8 + Spree   │
-   │  店面(SEO)  │  /api/v3  │   免费档·会休眠     │
-   └─────────────┘           └─────────┬──────────┘
-                                       │ 内网连接
-                             ┌────────▼────────┐
-                             │ Render Postgres │
-                             │  free·30天到期  │
-                             └─────────────────┘
+                 │                    │                    │
+   randomplayx.com（apex+www）   shop.randomplayx.com   api.randomplayx.com
+    CNAME→cname.vercel-dns.com   CNAME→cname.vercel-dns.com  （未绑定）
+     灰云（proxied:false）         灰云
+          │                              │
+   ┌──────▼──────────┐           ┌───────▼────────────┐
+   │ SilverForgedGui │  CTA 按钮  │   miao-storefront  │
+   │ 3D 引导站(R3F)  │──新标签──▶│  Next.js Spree 店面 │
+   │ github独立仓库   │  +UTM     │      (Vercel)      │
+   └─────────────────┘           └─────────┬──────────┘
+                                           │ REST /api/v3
+                                 ┌────────▼────────┐
+                                 │ Render 镜像后端  │──▶ Render PG（free）
+                                 └─────────────────┘
 ```
+
+> 2026-08-29 域名布局变更：randomplayx.com 从店铺改为 3D 引导站（体验优先决策，SEO 代价已知悉）；店铺迁至 shop.randomplayx.com。`*.vercel.app` 域名受部署保护有登录墙，两站均以自定义域名对外。
 
 | 组件 | 技术 | 承载 | 部署位置 |
 |---|---|---|---|
@@ -259,15 +261,18 @@ pnpm dev    # :3001，.env.local 已指向线上后端
 
 ## 7. 域名与 DNS（Cloudflare）
 
-已完成（2026-08-29）：
-1. apex：`CNAME randomplayx.com → cname.vercel-dns.com`，**灰云（proxied:false）**——Cloudflare CNAME 扁平化对外表现为 A 记录（Vercel anycast IP）
-2. www：`CNAME www → cname.vercel-dns.com`，灰云；Vercel 侧配置 301 回 apex
-3. 旧站（apex 原 CNAME → blackrelaxing-index.pages.dev，Cloudflare Pages）已被替换下线
-4. 同 zone 其他记录（pilot/resume/shumo/mvp 等子域）未动
+当前布局（2026-08-29 域名互换后）：
+1. apex：`CNAME randomplayx.com → cname.vercel-dns.com`，灰云 → **SilverForgedGui 3D 引导站**
+2. www：`CNAME www → cname.vercel-dns.com`，灰云 → 同上演示站（Vercel 侧 301 → apex）
+3. shop：`CNAME shop → cname.vercel-dns.com`，灰云 → **本仓库 Next.js 店面（miao-storefront）**
+4. 旧站（blackrelaxing-index.pages.dev）已下线；同 zone 其他记录（pilot/resume/shumo/mvp）未动
+5. 互换执行顺序（防冲突，已验证）：目标项目先加新城名 → 原项目**先移除带 301 的 www**（409 陷阱：apex 被 www 引用时删不掉）→ 再移除 apex → 新项目接管 apex → www 重挂并配 301
 
 待做：
 - **api.randomplayx.com** → `CNAME api → miao-backend-gecb.onrender.com`（灰云），再在 Render Dashboard → miao-backend → Settings → Custom Domains 添加该域名完成签发；随后把店面 `SPREE_API_URL` 切到 `https://api.randomplayx.com` 并重新部署店面
 - SSL/TLS 模式建议 **Full (strict)** + Always Use HTTPS（现全部灰云，模式暂不影响）
+
+回滚（店铺收回主域名）：silverforgedgui 移除 apex/www → miao-storefront 重新加 randomplayx.com（+ www 301）→ shop 记录可留作备用。全程仅 Vercel API 操作，DNS 不动，约 10 分钟。
 
 DNS 变更操作（API，token 在 `~/.cf-key`）：
 ```bash
@@ -284,7 +289,7 @@ curl -s -H "Authorization: Bearer $CF_TOKEN" \
 - [ ] 合规：对美 ≤$800/单 de minimis；原产国标识；银饰纯度如实标注（S925/S999）
 - [ ] 宣传红线：不使用「保值/投资/治病」类表述
 - [ ] GA4 + Search Console（apex 与 www 都验证）+ sitemap
-- [ ] 品牌化：店面标题/描述仍是 "Spree Store" 默认值，需换 Miao 品牌
+- [ ] 品牌化：店面标题/描述仍是 "Spree Store" 默认值，需换 Miao 品牌；og:url/canonical 仍指向 `miao-storefront-beta.vercel.app`（上游默认 metadata），需改为 shop.randomplayx.com
 - [ ] 域名邮箱 + WhatsApp Business
 - [ ] 产品图迁 S3/R2；Render PG 升级并开启每日备份
 - [ ] 管理后台强密码 + 后台限 IP（Cloudflare Access/WAF）

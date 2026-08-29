@@ -2,7 +2,7 @@
 
 面向海外市场的贵州苗族银饰（Miao Silver）品牌独立站，基于 **Spree Commerce 5.6.1（headless）** 构建。
 
-- **✅ 全链路已上线（2026-08-29，试跑）**：https://randomplayx.com（Vercel 店面，9 款 mock 苗银商品）→ https://miao-backend-gecb.onrender.com（Render 后端）→ Render Postgres（free，**2026-09-28 到期**）
+- **✅ 全链路已上线（2026-08-29，试跑）**：**randomplayx.com** = 3D 引导站（SilverForgedGui，末尾 CTA 跳店）→ **shop.randomplayx.com** = Vercel 店面（9 款 mock 苗银商品）→ https://miao-backend-gecb.onrender.com（Render 后端）→ Render Postgres（free，**2026-09-28 到期**）
 - DNS：Cloudflare 托管，apex + www 已切 Vercel（灰云）；`api.` 子域待绑
 - 支付暂未接入（按需求延后）；正式开站前清单见 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) §8
 
