@@ -26,7 +26,7 @@
 | 组件 | 技术 | 承载 | 部署位置 |
 |---|---|---|---|
 | 顾客店面 | Next.js（`storefront/`，Phase 2 引入） | 商品浏览、SEO 落地页、结账流程 | Vercel |
-| 商业后台 | Rails 8 + Spree 5.6（`backend/`） | Store API `/api/v3`、管理仪表盘 `/admin`、订单/库存 | Render（Docker） |
+| 商业后台 | Rails 8 + Spree 5.6（`backend/`） | Store API `/api/v3`、Admin API（React 仪表盘接入）、订单/库存 | Render（Docker） |
 | 数据库 | PostgreSQL 16+ | 商品、订单、用户 | Render 托管 Postgres |
 | 图片存储 | Active Storage | 产品图（初期本地磁盘，正式期迁 S3/Cloudflare R2） | 随后端 |
 
@@ -45,29 +45,29 @@ render.yaml         # Render 基础设施蓝图（后端 + 数据库）
 
 生产分支：`main`。后端与店面的部署互相独立：`backend/**` 变更只触发 Render，`storefront/**` 变更只触发 Vercel。
 
-## 2. 后端本地开发（backend/）
+## 2. 后端本地开发（backend/，容器化）
 
-前置：Ruby ≥ 3.2（仓库内 `backend/.ruby-version` 锁定）、Docker。
+前置：仅 Docker（含 Compose）。本机无需安装 Ruby——开发环境与生产同为容器，架构一致。
 
 ```bash
-# 1. 开发数据库（宿主机 5433，避免与本机其他项目冲突）
-docker run -d --name miao-pg -e POSTGRES_HOST_AUTH_METHOD=trust \
-  -e POSTGRES_USER=arco -p 127.0.0.1:5433:5432 postgres:16-alpine
+# 国内网络建议先备离线 gem 缓存（详见 README）
+./script/download-gems.sh backend/Gemfile.lock backend/vendor/cache
+cd backend && docker compose run --rm web bundle install --local && cd ..
 
-# 2. 安装依赖并准备数据库
-cd backend
-bundle install
-bin/rails db:prepare
+# 启动（PostgreSQL 16 :5433 + Rails :3000）
+docker compose up
 
-# 3. 启动（默认 http://localhost:3000）
-bin/dev
+# 首次初始化数据库 + 管理员
+cd backend && docker compose run --rm web bash -c \
+  "bin/rails db:prepare && bin/rails db:seed AUTO_ACCEPT=1 ADMIN_EMAIL=<邮箱> ADMIN_PASSWORD=<强密码>"
+bin/rails spree:load_sample_data   # 演示数据（可选）
 ```
 
-- Store API 健康检查：`GET /api/v3/store`
-- 管理后台：`http://localhost:3000/admin`
-- 创建管理员：`bin/rails db:seed ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=<强密码>`（或 `bin/rails spree:setup:token` 生成一次性开通链接）
-- 演示数据（可选）：`bin/rails spree:load_sample_data`
-- 运行测试：`bin/rails test`（绑定 CI 后合并前必绿）
+- 健康检查：`GET http://localhost:3000/up`
+- Store API：`/api/v3/store/*`，请求头 `X-Spree-Api-Key: <publishable key>`（key 存于 `spree_api_keys` 表）
+- 管理后台/仪表盘 API：`/api/v3/admin/*`（Spree 5.6 管理界面为 React 仪表盘，直连 Admin API）
+- 测试：`docker compose run --rm web bin/rails test`
+- 依赖解析：改 `Gemfile` 后本机网络不通时，推送触发 `.github/workflows/lockfile.yml` 由 CI 生成 lockfile
 
 ## 3. 后端正式部署（Render，蓝图驱动）
 
@@ -83,7 +83,7 @@ bin/dev
    bin/rails db:migrate
    bin/rails db:seed ADMIN_EMAIL=<管理员邮箱> ADMIN_PASSWORD=<强密码>
    ```
-4. 之后每次 `git push origin main`：Render 自动构建 Docker 镜像 → `preDeployCommand` 跑 `db:migrate` → 通过 `/up` 健康检查后切流
+4. 之后每次 `git push origin main`：Render 按 `backend/Dockerfile` 自动构建镜像 → 容器入口 `bin/docker-entrypoint` 自动执行 `db:prepare`（含迁移）→ 通过 `/up` 健康检查后切流。首次部署后补一次种子（Render Shell）：`bin/rails db:seed AUTO_ACCEPT=1 ADMIN_EMAIL=<邮箱> ADMIN_PASSWORD=<强密码>`
 
 要点：
 

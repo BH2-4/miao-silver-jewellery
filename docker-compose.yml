@@ -1,0 +1,39 @@
+# 本地开发环境：PostgreSQL 16 + Rails 后端（容器化，与生产 Docker 架构一致）
+# 首次使用见 README「快速开始」；数据库名/用户与宿主机直连方式兼容。
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: miao-pg
+    environment:
+      POSTGRES_USER: arco
+      POSTGRES_DB: miao_silver_jewellery
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - miao_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arco -d miao_silver_jewellery"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  web:
+    image: docker.m.daocloud.io/library/ruby:3.4 # 国内可拉取；海外可改 library/ruby:3.4
+    container_name: miao-dev
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://arco@db:5432/miao_silver_jewellery
+      BUNDLE_PATH: vendor/bundle
+      RAILS_ENV: development
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+    ports:
+      - "127.0.0.1:3000:3000"
+    command: bash -c "bundle install --local --quiet && bin/rails s -b 0.0.0.0 -p 3000"
+
+volumes:
+  miao_pgdata:
