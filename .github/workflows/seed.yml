@@ -1,0 +1,31 @@
+name: Seed production database
+
+# 手动触发：对 Render 生产库执行 db:seed（店铺默认数据 + 管理员）。
+# 在 Actions 网络中运行，避开本机到 Render 外部库的不稳定连接。
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    env:
+      RAILS_ENV: production
+      DATABASE_URL: ${{ secrets.RENDER_DB_URL }}
+      RAILS_MASTER_KEY: ${{ secrets.RAILS_MASTER_KEY }}
+      AUTO_ACCEPT: "1"
+      ADMIN_EMAIL: admin@randomplayx.com
+      ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+          bundler-cache: true
+      - name: Run seeds
+        run: bundle exec rails db:seed
