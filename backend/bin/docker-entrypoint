@@ -1,8 +1,10 @@
 #!/bin/bash -e
 
-# If running the rails server then create or migrate existing database
+# If running the rails server then create or migrate existing database,
+# then self-heal seed images (local disk storage does not survive rebuilds)
 if [ "${@: -2:1}" == "./bin/rails" ] && [ "${@: -1:1}" == "server" ]; then
   ./bin/rails db:prepare
+  ./bin/rails miao:sync_images
 fi
 
 exec "${@}"
