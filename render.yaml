@@ -1,11 +1,12 @@
 # Render Blueprint — Miao Silver Jewellery backend
-# 开通：Render Dashboard → New → Blueprint → 选择本仓库
+# 试跑阶段：free 档（web 512MB/0.1CPU 会休眠；Postgres 30 天过期）。
+# 正式接单前升级：web → starter，db → basic-256mb 以上（见 docs/DEPLOYMENT.md §8）。
 # 注意不可变字段：数据库 region / postgresMajorVersion 创建后不可改
 databases:
   - name: miao-db
     databaseName: miao_silver_jewellery
     user: miao_app
-    plan: basic-256mb
+    plan: free
     region: oregon
     postgresMajorVersion: 16
 
@@ -15,11 +16,10 @@ services:
     runtime: docker
     dockerfilePath: backend/Dockerfile
     dockerContext: backend
-    plan: starter
+    plan: free
     region: oregon
     healthCheckPath: /up
     autoDeployTrigger: commit
-    numInstances: 1
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -31,5 +31,9 @@ services:
         value: info
       - key: RAILS_STORAGE_SERVICE
         value: local # 正式接单前切 s3/r2（见 docs/DEPLOYMENT.md §6）
+      - key: WEB_CONCURRENCY
+        value: "1" # free 档 512MB，单进程
+      - key: RAILS_MAX_THREADS
+        value: "3"
       - key: RAILS_MASTER_KEY
         sync: false # 在 Dashboard 手工填入 backend/config/master.key 内容，勿提交仓库
