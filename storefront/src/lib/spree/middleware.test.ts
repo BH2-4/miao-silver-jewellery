@@ -31,6 +31,18 @@ describe("Spree locale middleware", () => {
     expect(response.cookies.get("spree_locale")?.value).toBe("en");
   });
 
+  it("ignores a non-ISO country cookie instead of reflecting it", () => {
+    const request = new NextRequest("https://store.example/products");
+    request.cookies.set("spree_country", "../../evil");
+
+    const response = middleware(request);
+
+    expect(response.headers.get("location")).toBe(
+      "https://store.example/us/en/products",
+    );
+    expect(response.cookies.get("spree_country")?.value).toBe("us");
+  });
+
   it("falls back to a supported locale when the configured default is unavailable", () => {
     const invalidDefaultMiddleware = createSpreeMiddleware({
       defaultCountry: "us",

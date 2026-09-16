@@ -178,9 +178,14 @@ export function createSpreeMiddleware(
       return nextWithLocaleContext(request, country, locale);
     }
 
-    // Detect country: cookie → geo headers → default
+    // Detect country: cookie (ISO alpha-2 allowlist) → geo headers → default.
+    // The cookie is client-settable; an unvalidated value would flow into the
+    // redirect path below and be echoed back for a year by setLocaleCookies.
+    const cookieCountry = request.cookies.get(COUNTRY_COOKIE)?.value;
     const country =
-      request.cookies.get(COUNTRY_COOKIE)?.value ??
+      (cookieCountry && /^[a-z]{2}$/i.test(cookieCountry)
+        ? cookieCountry.toLowerCase()
+        : undefined) ??
       request.headers.get("x-vercel-ip-country")?.toLowerCase() ??
       request.headers.get("cf-ipcountry")?.toLowerCase() ??
       defaultCountry;
